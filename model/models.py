@@ -21,7 +21,10 @@ class Predictor(Preprocess):
             os.mkdir(self.predictor_output_path)
         self.model_args = model_args
 
-        self.true = self.series[-100:]
+        self.test_ratio = model_args.test_ratio
+        total_len = len(self.series)
+        self.test_ind = int((1 - self.test_ratio) * total_len)
+        self.true = self.series[self.test_ind :]
 
     def predict_with_stl(self):
         period, result = self.seasonal_grid_search()
@@ -41,29 +44,54 @@ class Predictor(Preprocess):
             use_models = ["ARIMA"]
             reconstructed_pred = self.arima_predict(trend, seasonal, resid, period)
             reconstructed_preds.append(reconstructed_pred)
+        elif self.model_args.use_model == "MSTL_AR":
+            use_models = ["MSTL_AR"]
+            reconstructed_preds.append(self.ar_with_mstl(period=period))
         else:
             use_models = ["AR", "ARIMA"]
             reconstructed_preds.append(
                 self.ar_predict(trend=trend, seasonal=seasonal, resid=resid, period=period)
             )
             reconstructed_preds.append(self.arima_predict(trend, seasonal, resid, period))
-
         # 予測結果の可視化
         self._plt_tsa(reconstructed_preds=reconstructed_preds, use_models=use_models)
 
-        # 　予測結果の精度計算
+    def ar_with_mstl(self, period=24):
+        trends, seasonals, final_resid = self.multiple_seasonal_decomp()
+        train_resid = final_resid[: self.test_ind]
+        test_resid = final_resid[self.test_ind :]  # noqa
+
+        ar_model = AutoReg(train_resid, lags=period)
+        ar_fit = ar_model.fit()
+
+        pred_resid = ar_fit.predict(start=len(train_resid), end=len(final_resid) - 1)
+
+        reconstructed_pred = 0
+        for trend, seasonal in zip(trends, seasonals):
+            reconstructed_pred += trend[self.test_ind :] + seasonal[self.test_ind :]
+        reconstructed_pred += pred_resid
+
+        # 精度表示
+        mse = mean_squared_error(self.true, reconstructed_pred)
+        r2 = r2_score(self.true, reconstructed_pred)
+        aic = ar_fit.aic
+        print("\n == MSTL + ARの精度 == ")
+        print(f"MSTL + AR（resid予測）の MSE: {mse:.3f}")
+        print(f"MSTL + AR (resid予測）の R² : {r2:.3f}")
+        print(f"MSTL + AR（resid予測）の AIC: {aic:.3f}")
+        return reconstructed_pred
 
     def ar_predict(self, trend, seasonal, resid, period):
-        train_resid = resid[:-100]
-        test_resid = resid[-100:]  # noqa
+        train_resid = resid[: self.test_ind]
+        test_resid = resid[self.test_ind :]  # noqa
 
         ar_model = AutoReg(train_resid, lags=period)
         ar_fit = ar_model.fit()
 
         pred_resid = ar_fit.predict(start=len(train_resid), end=len(resid) - 1)
 
-        trend_tail = trend[-100:]
-        seasonal_tail = seasonal[-100:]
+        trend_tail = trend[self.test_ind :]
+        seasonal_tail = seasonal[self.test_ind :]
         reconstructed_pred = trend_tail + seasonal_tail + pred_resid
 
         # 精度表示
@@ -79,10 +107,10 @@ class Predictor(Preprocess):
 
     # ARIMA
     def arima_predict(self, trend, seasonal, resid, period):
-        train_resid = resid[:-100]
-        test_resid = resid[-100:]  # noqa
-        trend_tail = trend[-100:]
-        seasonal_tail = seasonal[-100:]
+        train_resid = resid[: self.test_ind]
+        test_resid = resid[self.test_ind :]  # noqa
+        trend_tail = trend[self.test_ind :]
+        seasonal_tail = seasonal[self.test_ind :]
 
         # AICを用いたパラメータの探索
         model = auto_arima(

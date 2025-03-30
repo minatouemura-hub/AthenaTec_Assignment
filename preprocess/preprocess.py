@@ -7,17 +7,32 @@ import numpy as np
 import pandas as pd
 from statsmodels.tsa.seasonal import STL
 
+from arg import MSTLConfig
+
 # 1. residual=>ARやLSTM　+ seasonalとtrendは加算
 # 2. 状態空間モデルで予測
 
 
 class Preprocess:
     def __init__(self, data_gen: pd.DataFrame, output_path: Path, target_col: str = "OT"):
+        self.prepro_config = MSTLConfig()
         self.preprocess_output_path = output_path / "preprocess"
         if not os.path.isdir(self.preprocess_output_path):
             os.mkdir(self.preprocess_output_path)
         self.series = data_gen[target_col]
         self.target_col = target_col
+
+    def multiple_seasonal_decomp(self):
+        periods = self.prepro_config.seasonals
+        trends = []
+        seasonals = []
+        reminder = self.series
+        for period in periods:
+            _, result = self.stl_decompose(reminder, period=period)
+            trends.append(result.trend)
+            seasonals.append(result.seasonal)
+            reminder = reminder - (result.seasonal + result.trend)
+        return trends, seasonals, reminder
 
     def seasonal_grid_search(self):
         periods = [24, 145, 168]
@@ -25,7 +40,7 @@ class Preprocess:
         result_list = []
         min_mse = 10000
         for period in periods:
-            mse, result = self.stl_decompose(period)
+            mse, result = self.stl_decompose(self.series, period)
             mse_list.append(mse)
             result_list.append(result)
 
@@ -35,17 +50,17 @@ class Preprocess:
         print(f"周期{periods[min_ind]}のMSE：{mse_list[min_ind]:.3f} が最小でした．")
         return periods[min_ind], result_list[min_ind]
 
-    def reconstruct_error(self, result):
+    def reconstruct_error(self, target_series, result):
         reconst = result.trend + result.seasonal
-        error = self.series - reconst
+        error = target_series - reconst
         mse = np.mean(error**2)
         return mse
 
-    def stl_decompose(self, period=145):
-        stl = STL(self.series, period=period)
+    def stl_decompose(self, target_series, period=145):
+        stl = STL(target_series, period=period)
         result = stl.fit()
 
-        mse = self.reconstruct_error(result=result)
+        mse = self.reconstruct_error(target_series, result=result)
 
         trend = result.trend
         seasonal = result.seasonal
@@ -54,7 +69,7 @@ class Preprocess:
         # 可視化
         fig, axs = plt.subplots(4, 1, figsize=(14, 10), sharex=True, gridspec_kw={"hspace": 0.3})
 
-        axs[0].plot(self.series, color="black")
+        axs[0].plot(target_series, color="black")
         axs[0].set_title("OT（元データ）", fontsize=12)
 
         axs[1].plot(trend, color="tab:blue")

@@ -19,14 +19,17 @@ def main(args: argparse.Namespace):
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
 
+    target_col = args.target_col
     data_gen = pd.read_csv(input_file_path)
 
     # 1.基礎統計などの可視化
-    eda = EDA(data_gen=data_gen, target_col="OT", output_path=output_dir)
+    print("\n==探索的データ解析を開始します==")
+    eda = EDA(data_gen=data_gen, target_col=target_col, output_path=output_dir)
     eda.basic_statics()
     # 2.前処理+予測
+    print("\n==時系列予測を開始します==")
     predictor = Predictor(
-        model_args=args, data_gen=data_gen, target_col="OT", output_path=output_dir
+        model_args=args, data_gen=data_gen, target_col=target_col, output_path=output_dir
     )
     predictor.predict_with_stl()
 

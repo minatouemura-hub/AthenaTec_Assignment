@@ -18,6 +18,12 @@ class EDA:
         if not os.path.isdir(self.eda_output_path):
             os.mkdir(self.eda_output_path)
 
+    def explanatoty_data_analysis(self):
+        self.basic_statics()
+        self.check_stationary()
+        self.corr_headmap()
+        self.fft_spectrum()
+
     # 基礎統計の確認
     def basic_statics(self):
         print(f"==Basic Statics:{self.target_col}==")
