@@ -25,7 +25,8 @@ def main(args: argparse.Namespace):
     # 1.基礎統計などの可視化
     print("\n==探索的データ解析を開始します==")
     eda = EDA(data_gen=data_gen, target_col=target_col, output_path=output_dir)
-    eda.basic_statics()
+    eda.explanatoty_data_analysis()
+
     # 2.前処理+予測
     print("\n==時系列予測を開始します==")
     predictor = Predictor(
